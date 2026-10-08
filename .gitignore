@@ -1,0 +1,13 @@
+bin/
+dist/
+output/
+logs/
+*.exe
+*.log
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example
+config.local.json
