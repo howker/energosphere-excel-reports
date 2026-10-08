@@ -16,7 +16,7 @@ import (
 
 func main() {
 	if len(os.Args) == 1 {
-		if err := runGUI("", "", ""); err != nil {
+		if err := runGUI("", "", passport.Options{}); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			showError(err.Error())
 		}
@@ -25,12 +25,26 @@ func main() {
 	source := flag.String("source", "", "Исходный XLSX")
 	out := flag.String("out", "reports", "Папка паспортов")
 	prefix := flag.String("prefix", "", "Общий верхний уровень имени")
+	omitCompany := flag.Bool("omit-company", false, "Не включать общество в имя файла")
+	date := flag.String("date", "", "Дата составления ДД.ММ.ГГГГ")
+	var members memberFlags
+	flag.Var(&members, "member", "Член комиссии: должность; ФИО (можно повторять)")
 	rows := flag.String("rows", "", "Исходные строки, например 10,16; пусто = все")
 	list := flag.Bool("list", false, "Только список присоединений")
 	gui := flag.Bool("gui", false, "Открыть окно; --source и --out необязательны")
 	flag.Parse()
+	commission, err := passport.ParseCommission(strings.Join(members, "\n"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	options := passport.Options{Prefix: *prefix, OmitCompany: *omitCompany, CompilationDate: *date, Commission: commission}
+	if err := options.Validate(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 	if *gui {
-		if err := runGUI(*source, *out, *prefix); err != nil {
+		if err := runGUI(*source, *out, options); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			showError(err.Error())
 		}
@@ -74,7 +88,7 @@ func main() {
 		}
 		items = picked
 	}
-	r := batch.Run(context.Background(), report.Template, items, *out, *prefix, func(p batch.Progress) {
+	r := batch.RunWithOptions(context.Background(), report.Template, items, *out, options, func(p batch.Progress) {
 		if p.File != "" {
 			fmt.Printf("%d/%d %s\n", p.Done, p.Total, p.File)
 		}
@@ -87,3 +101,8 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+type memberFlags []string
+
+func (m *memberFlags) String() string     { return strings.Join(*m, "\n") }
+func (m *memberFlags) Set(s string) error { *m = append(*m, s); return nil }

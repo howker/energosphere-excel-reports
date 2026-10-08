@@ -142,19 +142,22 @@ type browseInfo struct {
 }
 
 const (
-	wMEvent  = 0x8001
-	idOpen   = 100
-	idSearch = 101
-	idObject = 102
-	idList   = 103
-	idAll    = 104
-	idNone   = 105
-	idDir    = 106
-	idBrowse = 107
-	idPrefix = 108
-	idStart  = 109
-	idCancel = 110
-	idFolder = 111
+	wMEvent       = 0x8001
+	idOpen        = 100
+	idSearch      = 101
+	idObject      = 102
+	idList        = 103
+	idAll         = 104
+	idNone        = 105
+	idDir         = 106
+	idBrowse      = 107
+	idPrefix      = 108
+	idStart       = 109
+	idCancel      = 110
+	idFolder      = 111
+	idOmitCompany = 112
+	idDate        = 113
+	idCommission  = 114
 )
 
 type event struct {
@@ -163,6 +166,7 @@ type event struct {
 	Progress *batch.Progress
 	Result   *batch.Result
 	Source   string
+	Import   *importer.Progress
 }
 type appState struct {
 	window                             uintptr
@@ -244,16 +248,16 @@ func (a *appState) rebuild() {
 }
 func (a *appState) updateSelection() {
 	n := 0
-	for _, b := range a.selected {
-		if b {
+	for _, i := range a.visible {
+		if a.selected[i] {
 			n++
 		}
 	}
-	setText(a.summary, fmt.Sprintf("Всего: %d    В списке: %d    Выбрано: %d", len(a.items), len(a.visible), n))
+	setText(a.summary, fmt.Sprintf("Всего: %d    В списке: %d    К формированию: %d", len(a.items), len(a.visible), n))
 	preview := "Имя файла: выберите присоединение"
 	for _, i := range a.visible {
 		if a.selected[i] {
-			preview = "Имя файла: " + report.Filename(a.items[i], getText(a.controls[idPrefix]))
+			preview = "Имя файла: " + report.FilenameWithOptions(a.items[i], a.filenameOptions())
 			break
 		}
 	}
@@ -268,9 +272,27 @@ func (a *appState) load() {
 		return
 	}
 	filename := syscall.UTF16ToString(buf)
+	a.readSource(filename)
+}
+func (a *appState) readSource(filename string) {
 	a.busyControls(true)
+	send(a.progress, 0x402, 0, 0)
 	setText(a.status, "Чтение Excel…")
-	go func() { items, err := importer.Load(filename); a.emit(event{Items: items, Err: err, Source: filename}) }()
+	go func() {
+		lastPercent := -1
+		lastStage := ""
+		items, err := importer.LoadWithProgress(filename, func(p importer.Progress) {
+			if p.Percent != lastPercent || p.Stage != lastStage {
+				a.emit(event{Import: &p})
+				lastPercent = p.Percent
+				lastStage = p.Stage
+			}
+		})
+		a.emit(event{Items: items, Err: err, Source: filename})
+	}()
+}
+func (a *appState) filenameOptions() passport.Options {
+	return passport.Options{Prefix: getText(a.controls[idPrefix]), OmitCompany: send(a.controls[idOmitCompany], 0xf0, 0, 0) == 1}
 }
 func (a *appState) folder() {
 	buf := make([]uint16, 260)
@@ -286,9 +308,9 @@ func (a *appState) folder() {
 }
 func (a *appState) start() {
 	var picked []passport.Passport
-	for i, p := range a.items {
+	for _, i := range a.visible {
 		if a.selected[i] {
-			picked = append(picked, p)
+			picked = append(picked, a.items[i])
 		}
 	}
 	if len(picked) == 0 {
@@ -306,14 +328,23 @@ func (a *appState) start() {
 		return
 	}
 	setText(a.controls[idDir], dir)
-	prefix := getText(a.controls[idPrefix])
+	options := a.filenameOptions()
+	options.CompilationDate = strings.TrimSpace(getText(a.controls[idDate]))
+	options.Commission, err = passport.ParseCommission(getText(a.controls[idCommission]))
+	if err == nil {
+		err = options.Validate()
+	}
+	if err != nil {
+		showError(err.Error())
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
 	a.busyControls(true)
 	send(a.progress, 0x402, 0, 0)
 	setText(a.status, "Начало формирования…")
 	go func() {
-		r := batch.Run(ctx, report.Template, picked, dir, prefix, func(p batch.Progress) { a.emit(event{Progress: &p}) })
+		r := batch.RunWithOptions(ctx, report.Template, picked, dir, options, func(p batch.Progress) { a.emit(event{Progress: &p}) })
 		a.emit(event{Result: &r})
 	}()
 }
@@ -321,6 +352,12 @@ func (a *appState) handleEvents() {
 	for {
 		select {
 		case e := <-a.events:
+			if e.Import != nil {
+				p := e.Import
+				setText(a.status, fmt.Sprintf("Чтение Excel: %d%% · %s · присоединений %d", p.Percent, p.Stage, p.Done))
+				send(a.progress, 0x402, uintptr(p.Percent), 0)
+				continue
+			}
 			if e.Progress != nil {
 				p := e.Progress
 				setText(a.status, fmt.Sprintf("%d / %d · готово %d · %s", p.Done, p.Total, p.Success, p.Current))
@@ -375,6 +412,7 @@ func (a *appState) handleEvents() {
 			a.updating = false
 			a.rebuild()
 			setText(a.status, "Загружено: "+e.Source)
+			send(a.progress, 0x402, 100, 0)
 		default:
 			return
 		}
@@ -425,6 +463,8 @@ func windowProc(hwnd uintptr, m uint32, w uintptr, l unsafe.Pointer) uintptr {
 		switch id {
 		case idOpen:
 			app.load()
+		case idOmitCompany:
+			app.updateSelection()
 		case idAll:
 			for _, i := range app.visible {
 				app.selected[i] = true
@@ -459,7 +499,7 @@ func windowProc(hwnd uintptr, m uint32, w uintptr, l unsafe.Pointer) uintptr {
 	}
 	return call(user, "DefWindowProcW", hwnd, uintptr(m), w, l)
 }
-func runGUI(initialSource, initialDir, initialPrefix string) error {
+func runGUI(initialSource, initialDir string, initialOptions passport.Options) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	call(ole, "OleInitialize", 0)
@@ -491,7 +531,7 @@ func runGUI(initialSource, initialDir, initialPrefix string) error {
 	a.control("BUTTON", "Выбрать весь список", idAll, 16, 58, 190, 28, 0)
 	a.control("BUTTON", "Снять выбор в списке", idNone, 218, 58, 190, 28, 0)
 	a.summary = a.control("STATIC", "Откройте исходный файл Excel", 0, 425, 64, 600, 24, 0)
-	h := a.control("SysListView32", "", idList, 16, 100, 1010, 355, 0x00810001)
+	h := a.control("SysListView32", "", idList, 16, 100, 1010, 240, 0x00810001)
 	send(h, 0x1036, 0, 0x10024)
 	for i, c := range []struct {
 		Text  string
@@ -500,32 +540,40 @@ func runGUI(initialSource, initialDir, initialPrefix string) error {
 		column := lvColumn{Mask: 2 | 4, Width: c.Width, Text: u(c.Text)}
 		send(h, 0x1061, uintptr(i), unsafe.Pointer(&column))
 	}
-	a.control("STATIC", "Папка:", 0, 16, 473, 74, 24, 0)
+	a.control("STATIC", "Папка:", 0, 16, 358, 74, 24, 0)
 	exe, _ := os.Executable()
 	dir := filepath.Join(filepath.Dir(exe), "Паспорта")
 	if initialDir != "" {
 		dir = initialDir
 	}
-	a.control("EDIT", dir, idDir, 94, 468, 804, 28, 0x00810080)
-	a.control("BUTTON", "Выбрать…", idBrowse, 912, 468, 114, 28, 0)
-	a.control("STATIC", "Верхний уровень имени (необязательно):", 0, 16, 512, 340, 24, 0)
-	a.control("EDIT", initialPrefix, idPrefix, 360, 507, 666, 28, 0x00810080)
+	a.control("EDIT", dir, idDir, 94, 350, 804, 28, 0x00810080)
+	a.control("BUTTON", "Выбрать…", idBrowse, 912, 350, 114, 28, 0)
+	a.control("STATIC", "Дополнительный префикс имени:", 0, 16, 393, 340, 24, 0)
+	a.control("EDIT", initialOptions.Prefix, idPrefix, 360, 388, 666, 28, 0x00810080)
+	a.control("BUTTON", "Не включать общество в имя файла", idOmitCompany, 16, 425, 450, 24, 3)
+	if initialOptions.OmitCompany {
+		send(a.controls[idOmitCompany], 0xf1, 1, 0)
+	}
+	a.control("STATIC", "Дата составления (ДД.ММ.ГГГГ):", 0, 485, 429, 290, 24, 0)
+	a.control("EDIT", initialOptions.CompilationDate, idDate, 790, 423, 236, 28, 0x00810080)
+	a.control("STATIC", "Члены комиссии, по одному в строке: должность; ФИО. Пример: Инженер АОСС; С.Е. Кудряшов", 0, 16, 461, 1010, 24, 0)
+	var initialMembers []string
+	for _, m := range initialOptions.Commission {
+		initialMembers = append(initialMembers, m.Role+"; "+m.Name)
+	}
+	a.control("EDIT", strings.Join(initialMembers, "\r\n"), idCommission, 16, 487, 1010, 52, 0x00a11044)
 	a.preview = a.control("STATIC", "Имя файла: выберите присоединение", 0, 16, 546, 1010, 30, 0)
 	a.control("BUTTON", "Сформировать паспорта", idStart, 16, 586, 230, 32, 0)
 	a.control("BUTTON", "Отмена", idCancel, 260, 586, 110, 32, 0)
 	a.control("BUTTON", "Открыть папку", idFolder, 862, 586, 164, 32, 0)
 	a.progress = a.control("msctls_progress32", "", 0, 388, 590, 455, 24, 0)
 	send(a.progress, 0x406, 0, 100)
-	a.status = a.control("STATIC", "Готово к загрузке. Выбор и снятие выбора действуют на текущий список.", 0, 16, 635, 1010, 28, 0)
+	a.status = a.control("STATIC", "Формируются только отмеченные присоединения текущего списка.", 0, 16, 635, 1010, 28, 0)
 	a.busyControls(false)
 	call(user, "ShowWindow", a.window, 10) // Respect the launcher's initial show state.
 	call(user, "UpdateWindow", a.window)
 	if initialSource != "" {
-		a.busyControls(true)
-		go func() {
-			items, err := importer.Load(initialSource)
-			a.emit(event{Items: items, Err: err, Source: initialSource})
-		}()
+		a.readSource(initialSource)
 	}
 	var message msg
 	for {

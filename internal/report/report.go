@@ -36,6 +36,9 @@ func textCell(ref, style, value string) string {
 	if style != "" {
 		style = ` s="` + style + `"`
 	}
+	if value == "" {
+		return `<c r="` + ref + `"` + style + `/>`
+	}
 	return `<c r="` + ref + `"` + style + ` t="inlineStr"><is><t xml:space="preserve">` + escape(value) + `</t></is></c>`
 }
 func patchCells(data []byte, values map[string]string) []byte {
@@ -70,7 +73,7 @@ func Scheme(p passport.Passport) string {
 	}
 	return ""
 }
-func printValues(p passport.Passport) map[string]string {
+func printValues(p passport.Passport, options passport.Options) map[string]string {
 	v := map[string]string{
 		"Q1": "Трансформаторы напряжения:", "A11": p.Company, "A16": p.Object, "A18": p.Connection,
 		"M3": p.Connection, "M4": p.Accounting, "M5": p.Meter.Type, "P5": p.Meter.Serial,
@@ -113,6 +116,13 @@ func printValues(p passport.Passport) map[string]string {
 		}
 	}
 	v["M13"] = strings.Join(phases, ", ")
+	v["W14"] = `ООО "Газпром энерго"`
+	v["Z14"] = "Клеммная крышка счётчика"
+	v["AB14"] = `ООО "Газпром энерго"`
+	v["Z19"] = options.CompilationDate
+	for i, m := range options.Commission {
+		v[fmt.Sprintf("W%d", 27+i)] = m.Signature()
+	}
 	return v
 }
 
@@ -136,9 +146,15 @@ func sourceData(p passport.Passport) []byte {
 	return []byte(b.String())
 }
 
-// Build changes only worksheet cell payloads and drawing visibility. The ZIP
-// parts containing native shapes, pictures, styles and print settings survive.
+// Build fills the form and adjusts text wrapping and drawing visibility.
+// Native pictures, fonts, borders and paper settings remain in the ZIP.
 func Build(template []byte, p passport.Passport) ([]byte, error) {
+	return BuildWithOptions(template, p, passport.Options{})
+}
+func BuildWithOptions(template []byte, p passport.Passport, options passport.Options) ([]byte, error) {
+	if err := options.Validate(); err != nil {
+		return nil, err
+	}
 	w, err := xlsx.FromBytes(template)
 	if err != nil {
 		return nil, err
@@ -159,7 +175,7 @@ func Build(template []byte, p passport.Passport) ([]byte, error) {
 		switch s.Name {
 		case "Лист1":
 			found = true
-			for ref, value := range printValues(p) {
+			for ref, value := range printValues(p, options) {
 				values[ref] = value
 			}
 		case "исх.данные":
@@ -171,6 +187,11 @@ func Build(template []byte, p passport.Passport) ([]byte, error) {
 			}
 		}
 		w.Parts[s.Part] = patchCells(w.Parts[s.Part], values)
+		if s.Name == "Лист1" {
+			if err := layout(w, s, values, options); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if !found {
 		return nil, fmt.Errorf("шаблон не содержит Лист1")
@@ -253,7 +274,13 @@ func Build(template []byte, p passport.Passport) ([]byte, error) {
 }
 
 func Filename(p passport.Passport, prefix string) string {
-	s := p.Chain(prefix)
+	return FilenameWithOptions(p, passport.Options{Prefix: prefix})
+}
+func FilenameWithOptions(p passport.Passport, options passport.Options) string {
+	if options.OmitCompany {
+		p.Company = ""
+	}
+	s := p.Chain(options.Prefix)
 	s = strings.Map(func(r rune) rune {
 		if r < 32 || strings.ContainsRune(`<>:"/\|?*`, r) {
 			return ' '
@@ -271,11 +298,14 @@ func Filename(p passport.Passport, prefix string) string {
 	return s + ".xlsx"
 }
 func Save(template []byte, p passport.Passport, dir, prefix string) (string, error) {
-	data, err := Build(template, p)
+	return SaveWithOptions(template, p, dir, passport.Options{Prefix: prefix})
+}
+func SaveWithOptions(template []byte, p passport.Passport, dir string, options passport.Options) (string, error) {
+	data, err := BuildWithOptions(template, p, options)
 	if err != nil {
 		return "", err
 	}
-	name := Filename(p, prefix)
+	name := FilenameWithOptions(p, options)
 	stem := strings.TrimSuffix(name, ".xlsx")
 	for i := 0; i < 10000; i++ {
 		n := name

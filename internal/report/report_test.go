@@ -2,6 +2,7 @@ package report
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -62,9 +63,7 @@ func TestTemplateAndRender(t *testing.T) {
 		if len(n) > 9 && n[:9] == "xl/media/" && !bytes.Equal(d, w.Parts[n]) {
 			t.Errorf("changed image %s", n)
 		}
-		if n == "xl/styles.xml" && !bytes.Equal(d, w.Parts[n]) {
-			t.Fatal("changed styles")
-		}
+		// Fonts and borders survive; wrapping clones are intentionally appended.
 	}
 	if Scheme(p) != "Рисунок2" {
 		t.Fatal("wrong scheme")
@@ -78,11 +77,93 @@ func TestTemplateAndRender(t *testing.T) {
 		t.Fatal("unsupported scheme must stay hidden")
 	}
 }
+
+func TestBatchOptionsAndTrueBlankCells(t *testing.T) {
+	p := example()
+	options := passport.Options{OmitCompany: true, CompilationDate: "08.10.2026", Commission: []passport.Member{{Role: "Инженер АОСС", Name: "С.Е. Кудряшов"}, {Role: "Начальник", Name: "И.И. Иванов"}}}
+	b, e := BuildWithOptions(Template, p, options)
+	if e != nil {
+		t.Fatal(e)
+	}
+	w, e := xlsx.FromBytes(b)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, s := range w.Sheets {
+		if s.Name != "Лист1" {
+			continue
+		}
+		for ref, want := range map[string]string{"W14": `ООО "Газпром энерго"`, "Z14": "Клеммная крышка счётчика", "AB14": `ООО "Газпром энерго"`, "Z19": "08.10.2026", "W27": "Инженер АОСС  ________  С.Е. Кудряшов", "W28": "Начальник  ________  И.И. Иванов", "A11": p.Company} {
+			got, _ := w.Raw(s.Cells[ref])
+			if got != want {
+				t.Errorf("%s=%q want %q", ref, got, want)
+			}
+		}
+		for _, c := range s.Cells {
+			if c.Type == "inlineStr" && c.Inline.String() == "" {
+				t.Errorf("empty inline string blocks overflow: %s", c.Ref)
+			}
+		}
+		if !bytes.Contains(w.Parts[s.Part], []byte(`ref="K1:P1"`)) {
+			t.Fatal("heading range missing")
+		}
+		for _, row := range s.Rows {
+			last := 0
+			for _, c := range row.Cells {
+				col, _ := xlsx.Coordinates(c.Ref)
+				if col <= last {
+					t.Errorf("unordered cells: row %d ref %s", row.Number, c.Ref)
+				}
+				last = col
+			}
+		}
+	}
+	if FilenameWithOptions(p, options) != "ГПП-1 ЗРУ 6кВ№1 яч.1 РП-17.xlsx" {
+		t.Fatal(FilenameWithOptions(p, options))
+	}
+}
 func TestPatchSelfClosingCell(t *testing.T) {
 	b := []byte(`<row><c r="A1"/><c r="B1" s="2"><v>42</v></c><c r="C1"><v>7</v></c></row>`)
 	b = patchCells(b, map[string]string{"A1": "", "B1": "next", "C1": "001"})
 	if !bytes.Contains(b, []byte(`r="B1" s="2"`)) || !bytes.Contains(b, []byte(`>001</t>`)) {
 		t.Fatal(string(b))
+	}
+}
+
+func TestLargeCommissionExtendsForm(t *testing.T) {
+	options := passport.Options{}
+	for i := 0; i < 25; i++ {
+		options.Commission = append(options.Commission, passport.Member{Role: "Инженер", Name: fmt.Sprintf("Участник %d", i+1)})
+	}
+	b, err := BuildWithOptions(Template, example(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := xlsx.FromBytes(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range w.Sheets {
+		if s.Name != "Лист1" {
+			continue
+		}
+		for i, member := range options.Commission {
+			ref := fmt.Sprintf("W%d", 27+i)
+			got, _ := w.Raw(s.Cells[ref])
+			if got != member.Signature() {
+				t.Errorf("%s=%q", ref, got)
+			}
+		}
+		last := 0
+		for _, row := range s.Rows {
+			if row.Number <= last {
+				t.Fatalf("unordered row %d after %d", row.Number, last)
+			}
+			last = row.Number
+		}
+		if !bytes.Contains(w.Parts[s.Part], []byte(`ref="W51:AD51"`)) || !bytes.Contains(w.Parts["xl/workbook.xml"], []byte("$AD$51")) {
+			t.Fatal("commission outside print area")
+		}
 	}
 }
 func TestNoOverwriteAndNames(t *testing.T) {

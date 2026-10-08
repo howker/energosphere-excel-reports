@@ -52,6 +52,12 @@ type Sheet struct {
 	Merges     []Merge         `xml:"mergeCells>mergeCell"`
 	Cells      map[string]Cell `xml:"-"`
 	Name, Part string          `xml:"-"`
+	ranges     []cellRange
+	byRow      map[int][]cellRange
+}
+type cellRange struct {
+	left, top, right, bottom int
+	anchor                   string
 }
 type sheetRef struct {
 	Name string `xml:"name,attr"`
@@ -66,24 +72,33 @@ type Workbook struct {
 }
 
 func Open(filename string) (*Workbook, error) {
+	return OpenWithProgress(filename, nil)
+}
+func OpenWithProgress(filename string, notify func(int, string)) (*Workbook, error) {
 	z, err := zip.OpenReader(filename)
 	if err != nil {
 		return nil, fmt.Errorf("открытие XLSX: %w", err)
 	}
 	defer z.Close()
-	return read(z.File)
+	return read(z.File, notify)
 }
 func FromBytes(data []byte) (*Workbook, error) {
 	z, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, err
 	}
-	return read(z.File)
+	return read(z.File, nil)
 }
-func read(files []*zip.File) (*Workbook, error) {
+func read(files []*zip.File, notify func(int, string)) (*Workbook, error) {
+	progress := func(n int, stage string) {
+		if notify != nil {
+			notify(n, stage)
+		}
+	}
+	progress(0, "Открытие книги")
 	w := &Workbook{Parts: make(map[string][]byte)}
 	var total int64
-	for _, f := range files {
+	for i, f := range files {
 		if f.UncompressedSize64 > maxPart {
 			return nil, fmt.Errorf("слишком большой раздел XLSX: %s", f.Name)
 		}
@@ -101,6 +116,7 @@ func read(files []*zip.File) (*Workbook, error) {
 			return nil, fmt.Errorf("книга превышает лимит 128 МБ распакованных данных")
 		}
 		w.Parts[f.Name] = b
+		progress((i+1)*25/len(files), "Чтение разделов XLSX")
 	}
 	var wb struct {
 		Sheets []sheetRef `xml:"sheets>sheet"`
@@ -130,6 +146,7 @@ func read(files []*zip.File) (*Workbook, error) {
 		targets[r.ID] = t
 	}
 	if b := w.Parts["xl/sharedStrings.xml"]; len(b) > 0 {
+		progress(28, "Чтение строк книги")
 		var ss struct {
 			Items []RichText `xml:"si"`
 		}
@@ -157,7 +174,8 @@ func read(files []*zip.File) (*Workbook, error) {
 	for _, f := range styles.Xfs {
 		w.Formats = append(w.Formats, codes[f.ID])
 	}
-	for _, ref := range wb.Sheets {
+	for i, ref := range wb.Sheets {
+		progress(35+i*25/len(wb.Sheets), "Чтение листа: "+ref.Name)
 		s := &Sheet{Name: ref.Name, Part: targets[ref.ID], Cells: make(map[string]Cell)}
 		if err := xml.Unmarshal(w.Parts[s.Part], s); err != nil {
 			return nil, fmt.Errorf("лист %s: %w", ref.Name, err)
@@ -168,7 +186,17 @@ func read(files []*zip.File) (*Workbook, error) {
 			}
 		}
 		w.Sheets = append(w.Sheets, s)
+		s.byRow = make(map[int][]cellRange)
+		for _, m := range s.Merges {
+			p := strings.Split(m.Ref, ":")
+			if len(p) == 2 {
+				a, b := Coordinates(p[0])
+				c, d := Coordinates(p[1])
+				s.ranges = append(s.ranges, cellRange{a, b, c, d, p[0]})
+			}
+		}
 	}
+	progress(60, "Листы прочитаны")
 	return w, nil
 }
 func (w *Workbook) Raw(c Cell) (string, error) {
@@ -261,15 +289,18 @@ func Column(n int) string {
 }
 func (s *Sheet) At(col, row int) Cell {
 	ref := Column(col) + strconv.Itoa(row)
-	for _, m := range s.Merges {
-		p := strings.Split(m.Ref, ":")
-		if len(p) != 2 {
-			continue
+	ranges, ok := s.byRow[row]
+	if !ok {
+		for _, r := range s.ranges {
+			if row >= r.top && row <= r.bottom {
+				ranges = append(ranges, r)
+			}
 		}
-		a, b := Coordinates(p[0])
-		c, d := Coordinates(p[1])
-		if col >= a && col <= c && row >= b && row <= d {
-			ref = p[0]
+		s.byRow[row] = ranges
+	}
+	for _, r := range ranges {
+		if col >= r.left && col <= r.right {
+			ref = r.anchor
 			break
 		}
 	}

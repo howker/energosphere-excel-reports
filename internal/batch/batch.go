@@ -21,7 +21,14 @@ type Result struct {
 }
 
 func Run(ctx context.Context, template []byte, items []passport.Passport, dir, prefix string, notify func(Progress)) Result {
+	return RunWithOptions(ctx, template, items, dir, passport.Options{Prefix: prefix}, notify)
+}
+func RunWithOptions(ctx context.Context, template []byte, items []passport.Passport, dir string, options passport.Options, notify func(Progress)) Result {
 	r := Result{}
+	if err := options.Validate(); err != nil {
+		r.Errors = append(r.Errors, err.Error())
+		return r
+	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		r.Errors = append(r.Errors, err.Error())
 		return r
@@ -36,7 +43,7 @@ func Run(ctx context.Context, template []byte, items []passport.Passport, dir, p
 		if notify != nil {
 			notify(Progress{Done: i, Total: len(items), Success: len(r.Files), Current: p.Connection})
 		}
-		file, err := report.Save(template, p, dir, prefix)
+		file, err := report.SaveWithOptions(template, p, dir, options)
 		if err != nil {
 			r.Errors = append(r.Errors, fmt.Sprintf("Строка %d, %s: %v", p.Row, p.Connection, err))
 		} else {

@@ -68,3 +68,17 @@ func TestUnexpectedBlockFails(t *testing.T) {
 		t.Fatal("bad block accepted")
 	}
 }
+func TestReadProgress(t *testing.T) {
+	last := -1
+	n := 0
+	_, err := LoadWithProgress(fixture(t, false), func(p Progress) {
+		if p.Percent < last || p.Percent > 100 {
+			t.Errorf("invalid progress %d after %d", p.Percent, last)
+		}
+		last = p.Percent
+		n++
+	})
+	if err != nil || last != 100 || n < 3 {
+		t.Fatalf("last %d events %d error %v", last, n, err)
+	}
+}

@@ -9,8 +9,19 @@ import (
 	"github.com/howker/energosphere-excel-reports/internal/xlsx"
 )
 
-func Load(filename string) ([]passport.Passport, error) {
-	w, err := xlsx.Open(filename)
+type Progress struct {
+	Percent, Done, Total int
+	Stage                string
+}
+
+func Load(filename string) ([]passport.Passport, error) { return LoadWithProgress(filename, nil) }
+func LoadWithProgress(filename string, notify func(Progress)) ([]passport.Passport, error) {
+	progress := func(p Progress) {
+		if notify != nil {
+			notify(p)
+		}
+	}
+	w, err := xlsx.OpenWithProgress(filename, func(percent int, stage string) { progress(Progress{Percent: percent, Stage: stage}) })
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +54,8 @@ func Load(filename string) ([]passport.Passport, error) {
 		return nil, fmt.Errorf("не найден лист формата Прил.1.1 (Сч,ТТ,ТН): ожидаются столбцы A:AF и заголовки в строках 6–8")
 	}
 	var out []passport.Passport
-	for _, r := range chosen.Rows {
+	for index, r := range chosen.Rows {
+		progress(Progress{Percent: 60 + (index+1)*39/len(chosen.Rows), Done: len(out), Stage: "Чтение присоединений"})
 		if r.Number < 10 {
 			continue
 		}
@@ -98,6 +110,7 @@ func Load(filename string) ([]passport.Passport, error) {
 	if len(out) == 0 {
 		return nil, fmt.Errorf("в книге нет присоединений")
 	}
+	progress(Progress{Percent: 100, Done: len(out), Total: len(out), Stage: "Чтение завершено"})
 	return out, nil
 }
 func equipment(v [32]string, i int) passport.Equipment {
