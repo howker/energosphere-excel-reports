@@ -82,6 +82,21 @@ func layout(w *xlsx.Workbook, s *xlsx.Sheet, values map[string]string, options p
 		}
 		cellStyles[ref] = id
 	}
+	if len(options.Commission) > 0 {
+		// Signature cells are absent from the template. Use the commission
+		// heading's Times New Roman 14 pt instead of the default Calibri 11 pt.
+		heading, ok := s.Cells["W25"]
+		if !ok || heading.Style < 0 || heading.Style >= len(baseStyles) {
+			return fmt.Errorf("не найден стиль заголовка комиссии")
+		}
+		id := len(styles)
+		style := wrappingStyle(baseStyles[heading.Style])
+		style = alignmentRE.ReplaceAllLiteral(style, []byte(`<alignment horizontal="center" vertical="center" wrapText="1"/>`))
+		styles = append(styles, style)
+		for i := range options.Commission {
+			cellStyles[fmt.Sprintf("W%d", 27+i)] = id
+		}
+	}
 	styleBlock := []byte(fmt.Sprintf(`<cellXfs count="%d">`, len(styles)))
 	for _, style := range styles {
 		styleBlock = append(styleBlock, style...)
