@@ -22,6 +22,7 @@ func example() passport.Passport {
 	p.SourceCells[0][12] = "12.09.2075"
 	return p
 }
+
 func TestTemplateAndRender(t *testing.T) {
 	p := example()
 	b, e := Build(Template, p)
@@ -41,7 +42,12 @@ func TestTemplateAndRender(t *testing.T) {
 	if s == nil {
 		t.Fatal("missing print sheet")
 	}
-	expected := map[string]string{"Q1": "Трансформаторы напряжения:", "M5": "Счётчик", "P5": "001234", "M7": "0,2S", "P7": "", "M12": "04.08.2021", "L29": "50/1", "L34": "", "N28": "00007", "N31": "01.01.2026", "T5": "", "W21": "", "B44": "", "P10": "", "A18": p.Connection}
+	expected := map[string]string{
+		"Q1": "Трансформаторы напряжения:", "M5": "Счётчик", "P5": "001234",
+		"M7": "0,2S", "P7": "", "M12": "04.08.2021", "L29": "50/1", "L34": "",
+		"N28": "00007", "N31": "01.01.2026", "T5": "", "W21": "Установлено: измерительный комплекс учета электрической энергии может быть допущен к эксплуатации.", "B44": "",
+		"P10": "16", "A18": p.Connection,
+	}
 	for ref, value := range expected {
 		got, e := w.Raw(s.Cells[ref])
 		if e != nil || got != value {
@@ -63,7 +69,6 @@ func TestTemplateAndRender(t *testing.T) {
 		if len(n) > 9 && n[:9] == "xl/media/" && !bytes.Equal(d, w.Parts[n]) {
 			t.Errorf("changed image %s", n)
 		}
-		// Fonts and borders survive; wrapping clones are intentionally appended.
 	}
 	if Scheme(p) != "Рисунок2" {
 		t.Fatal("wrong scheme")
@@ -80,7 +85,7 @@ func TestTemplateAndRender(t *testing.T) {
 
 func TestBatchOptionsAndTrueBlankCells(t *testing.T) {
 	p := example()
-	options := passport.Options{OmitCompany: true, CompilationDate: "08.10.2026", Commission: []passport.Member{{Role: "Инженер АОСС", Name: "С.Е. Кудряшов"}, {Role: "Начальник", Name: "И.И. Иванов"}}}
+	options := passport.Options{OmitCompany: true, CompilationDate: "08.10.2026", VafVerification: "10.10.2026", Commission: []passport.Member{{Role: "Инженер АОСС", Name: "С.Е. Кудряшов"}, {Role: "Начальник", Name: "И.И. Иванов"}}}
 	b, e := BuildWithOptions(Template, p, options)
 	if e != nil {
 		t.Fatal(e)
@@ -93,7 +98,16 @@ func TestBatchOptionsAndTrueBlankCells(t *testing.T) {
 		if s.Name != "Лист1" {
 			continue
 		}
-		for ref, want := range map[string]string{"W14": `ООО "Газпром энерго"`, "Z14": "Клеммная крышка счётчика", "AB14": `ООО "Газпром энерго"`, "Z19": "08.10.2026", "W27": "Инженер АОСС  ________  С.Е. Кудряшов", "W28": "Начальник  ________  И.И. Иванов", "A11": p.Company} {
+		for ref, want := range map[string]string{
+			"W14":  `ООО "Газпром энерго"`,
+			"Z14":  "испытательная коробка",
+			"AB14": `пломба ООО "Газпром энерго"`,
+			"Z19":  "08.10.2026",
+			"AC5":  "10.10.2026",
+			"W27":  "Инженер АОСС  ________  С.Е. Кудряшов",
+			"W28":  "Начальник  ________  И.И. Иванов",
+			"A11":  `Инженерно-технического центра ООО «Газпром энерго»`,
+		} {
 			got, _ := w.Raw(s.Cells[ref])
 			if got != want {
 				t.Errorf("%s=%q want %q", ref, got, want)
@@ -122,6 +136,7 @@ func TestBatchOptionsAndTrueBlankCells(t *testing.T) {
 		t.Fatal(FilenameWithOptions(p, options))
 	}
 }
+
 func TestPatchSelfClosingCell(t *testing.T) {
 	b := []byte(`<row><c r="A1"/><c r="B1" s="2"><v>42</v></c><c r="C1"><v>7</v></c></row>`)
 	b = patchCells(b, map[string]string{"A1": "", "B1": "next", "C1": "001"})
@@ -166,6 +181,7 @@ func TestLargeCommissionExtendsForm(t *testing.T) {
 		}
 	}
 }
+
 func TestNoOverwriteAndNames(t *testing.T) {
 	p := example()
 	dir := t.TempDir()

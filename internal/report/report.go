@@ -25,6 +25,147 @@ var pictureRE = regexp.MustCompile(`<xdr:cNvPr\b[^>]*name="Рисунок[123]"[
 var hiddenRE = regexp.MustCompile(` hidden="[^"]*"`)
 var relationRE = regexp.MustCompile(`<Relationship\b[^>]*/>`)
 var overrideRE = regexp.MustCompile(`<Override\b[^>]*/>`)
+var busSectionCutRegex = regexp.MustCompile(`(?i)\s+(?:Ввод|яч\.?|ячейка|Линия|ВЛ|КЛ|Т-\d+|ТДН|ТМН|ТТР|ТСН|Ф-\d+|СВ|ШСВ|ТН|АВР)\b.*`) // Справочник номеров в Госреестре СИ
+var gosReestrDict = map[string]string{
+	"меркурий 234": "55276-13",
+	"меркурий 230": "23345-07",
+	"сэт-4тм.03":   "20175-01",
+	"сэт-4тм.02":   "20175-01",
+	"псч-4тм":      "20175-01",
+	"цэ6850":       "16864-08",
+	"тлш-10":       "1832-64",
+	"тпл-10":       "1254-58",
+	"тол-10":       "14652-95",
+	"тпол-10":      "1254-58",
+	"тлм-10":       "1831-64",
+	"твлм-10":      "1831-64",
+	"знол-0.6-10":  "3344-72",
+	"знол-0,6-10":  "3344-72",
+	"знол.06-10":   "3344-72",
+	"знол-10":      "3344-72",
+	"нами-10":      "3297-72",
+	"нтми-10":      "2150-66",
+	"намит-10":     "19794-00",
+	"нол-10":       "3492-72",
+	"нол.06-10":    "3492-72",
+	"тфзм":         "1544-61",
+}
+
+// Справочник номинальных вторичных нагрузок ТТ (ВА)
+var ctNominalBurdenDict = map[string]string{
+	"тлш-10":   "20",
+	"тпл-10":   "10",
+	"тол-10":   "15",
+	"тпол-10":  "15",
+	"тлм-10":   "15",
+	"твлм-10":  "15",
+	"тфзм":     "30",
+	"тшл-0.66": "5",
+	"топ-0.66": "5",
+	"тшп-0.66": "5",
+}
+
+// Справочник номинальных мощностей ТН (ВА) для класса 0.5
+var vtNominalBurdenDict = map[string]string{
+	"знол-0.6-10": "75",
+	"знол-0,6-10": "75",
+	"знол.06-10":  "75",
+	"знол-10":     "75",
+	"нами-10":     "75",
+	"нтми-10":     "120",
+	"намит-10":    "150",
+	"нол-10":      "75",
+	"нол.06-10":   "75",
+}
+
+func lookupGosReestr(eqType string) string {
+	n := strings.ToLower(strings.TrimSpace(eqType))
+	for k, v := range gosReestrDict {
+		if strings.Contains(n, k) {
+			return v
+		}
+	}
+	return ""
+}
+
+func lookupCTNominalBurden(eqType string) string {
+	n := strings.ToLower(strings.TrimSpace(eqType))
+	for k, v := range ctNominalBurdenDict {
+		if strings.Contains(n, k) {
+			return v
+		}
+	}
+	return ""
+}
+
+func lookupVTNominalBurden(eqType string) string {
+	n := strings.ToLower(strings.TrimSpace(eqType))
+	for k, v := range vtNominalBurdenDict {
+		if strings.Contains(n, k) {
+			return v
+		}
+	}
+	return ""
+}
+
+func lookupMeterNominals(meterType, accuracy string) (voltage, current, reactiveAccuracy, tariffs string) {
+	n := strings.ToLower(strings.TrimSpace(meterType))
+	if n == "" || n == "-" || n == "счётчик" {
+		return "", "", "", ""
+	}
+	voltage = "3×57,7/100 В"
+	current = "5 (10) А"
+	tariffs = "4"
+
+	if strings.Contains(n, "сэт-4тм") || strings.Contains(n, "псч-4тм") {
+		current = "5 (7,5) А"
+	}
+
+	acc := strings.ToLower(strings.TrimSpace(accuracy))
+	if strings.Contains(acc, "0,2") || strings.Contains(acc, "0.2") {
+		reactiveAccuracy = "0,5"
+	} else if strings.Contains(acc, "0,5") || strings.Contains(acc, "0.5") {
+		reactiveAccuracy = "1,0"
+	} else {
+		reactiveAccuracy = "1,0"
+	}
+	return
+}
+
+func parseYear(s string) int {
+	for _, part := range strings.FieldsFunc(s, func(r rune) bool {
+		return r < '0' || r > '9'
+	}) {
+		if len(part) == 4 && (strings.HasPrefix(part, "19") || strings.HasPrefix(part, "20")) {
+			if y, err := strconv.Atoi(part); err == nil {
+				return y
+			}
+		}
+	}
+	return 0
+}
+
+func calcInterval(start, end string) string {
+	ys := parseYear(start)
+	ye := parseYear(end)
+	if ys > 0 && ye > ys {
+		diff := ye - ys
+		if diff > 30 {
+			return "16"
+		}
+		return strconv.Itoa(diff)
+	}
+	return ""
+}
+
+func ExtractBusSection(conn string) string {
+	conn = strings.TrimSpace(conn)
+	loc := busSectionCutRegex.FindStringIndex(conn)
+	if loc != nil && loc[0] > 0 {
+		return strings.TrimSpace(conn[:loc[0]])
+	}
+	return conn
+}
 
 func escape(s string) string {
 	s = strings.ReplaceAll(s, "&", "&amp;")
@@ -74,15 +215,52 @@ func Scheme(p passport.Passport) string {
 	return ""
 }
 func printValues(p passport.Passport, options passport.Options) map[string]string {
+	ttPlace := "Трансформаторы тока:"
+	meterEnd := ""
+	if len(p.SourceCells) > 0 && len(p.SourceCells[0]) > 12 {
+		meterEnd = p.SourceCells[0][12]
+	}
+	meterInterval := calcInterval(p.Meter.Verification, meterEnd)
+	if meterInterval == "" && p.Meter.Type != "" {
+		meterInterval = "16"
+	}
+
+	mVolt, mCurr, mReactAcc, mTariffs := lookupMeterNominals(p.Meter.Type, p.Meter.Accuracy)
+	energyType := ""
+	syncClocks := ""
+	tempRegime := ""
+	if p.Meter.Type != "" && p.Meter.Type != "-" && p.Meter.Type != "Счётчик" {
+		energyType = "А, R"
+		syncClocks = "да"
+		tempRegime = "соответствует"
+	}
 	v := map[string]string{
-		"Q1": "Трансформаторы напряжения:", "A11": p.Company, "A16": p.Object, "A18": p.Connection,
-		"M3": p.Connection, "M4": p.Accounting, "M5": p.Meter.Type, "P5": p.Meter.Serial,
-		"M7": p.Meter.Accuracy, "P12": p.Meter.Year, "M12": p.Meter.Verification,
-		"E10": strings.TrimSpace(strings.TrimSuffix(p.Voltage, "кВ")), "K26": p.Ownership,
+		"Q1": "Трансформаторы напряжения:", "Q2": "Место установки:", "R2": ExtractBusSection(p.Connection),
+		"A11": `Инженерно-технического центра ООО «Газпром энерго»`, "A16": p.Object, "A18": p.Connection,
+		"M3": p.Connection, "M4": p.Accounting, "P4": energyType,
+		"M5": p.Meter.Type, "P5": p.Meter.Serial,
+		"M6": mVolt, "P6": mCurr,
+		"M7": p.Meter.Accuracy, "P7": mReactAcc,
+		"M9": mTariffs, "P9": lookupGosReestr(p.Meter.Type),
+		"M10": syncClocks, "P10": meterInterval,
+		"M12": p.Meter.Verification, "P12": p.Meter.Year,
+		"P13": tempRegime,
+		"E10": strings.TrimSpace(strings.TrimSuffix(p.Voltage, "кВ")),
+		"K25": ttPlace, "O25": "", "K26": "Место установки: " + p.Connection,
 		"K33": "Фаза B", "M13": "",
 	}
-	// Explicitly clear constants and example observations, including conclusions.
-	for _, a := range strings.Fields("P4 M6 P6 P7 M9 P9 M10 P10 P13 M15 P15 M20 W5 Y5 AA5 W14 Z14 AB14 W15 Z15 AB15 W21 B44 Q41 Q43 C30 E31") {
+	// Explicitly clear constants and example observations
+	for _, a := range strings.Fields("B44 Q41 Q43 C30 E31") {
+		v[a] = ""
+	}
+	v["M15"] = "не проводилось"
+	v["P15"] = "не проводилось"
+	// Перечень средств измерений (Парма ВАФ-А)
+	v["W5"] = "Парма ВАФ-А"
+	v["Y5"] = "3387"
+	v["AA5"] = "1"
+	v["AC5"] = options.VafVerification
+	for _, a := range strings.Fields("W6 Y6 AA6 AC6") {
 		v[a] = ""
 	}
 	for i := 0; i < 3; i++ {
@@ -92,22 +270,45 @@ func printValues(p passport.Passport, options passport.Options) map[string]strin
 		v[fmt.Sprintf("N%d", n)] = t.Serial
 		v[fmt.Sprintf("P%d", n)] = t.Accuracy
 		v[fmt.Sprintf("L%d", n+1)] = t.Ratio
-		v[fmt.Sprintf("N%d", n+1)] = ""
+		v[fmt.Sprintf("N%d", n+1)] = lookupCTNominalBurden(t.Type)
 		v[fmt.Sprintf("P%d", n+1)] = ""
-		v[fmt.Sprintf("L%d", n+3)] = ""
+		v[fmt.Sprintf("L%d", n+3)] = lookupGosReestr(t.Type)
 		v[fmt.Sprintf("N%d", n+3)] = t.Verification
-		v[fmt.Sprintf("P%d", n+3)] = ""
+		ctEnd := ""
+		if len(p.SourceCells) > i && len(p.SourceCells[i]) > 20 {
+			ctEnd = p.SourceCells[i][20]
+		}
+		if ctEnd == "" && len(p.SourceCells) > 0 && len(p.SourceCells[0]) > 20 {
+			ctEnd = p.SourceCells[0][20]
+		}
+		ctInterval := calcInterval(t.Verification, ctEnd)
+		if ctInterval == "" && t.Type != "" && t.Type != "-" {
+			ctInterval = "8"
+		}
+		v[fmt.Sprintf("P%d", n+3)] = ctInterval
+
 		u := p.VT[i]
 		n = 4 + 6*i
 		v[fmt.Sprintf("R%d", n)] = u.Type
 		v[fmt.Sprintf("T%d", n)] = u.Serial
 		v[fmt.Sprintf("V%d", n)] = u.Accuracy
 		v[fmt.Sprintf("R%d", n+1)] = u.Ratio
-		v[fmt.Sprintf("T%d", n+1)] = ""
+		v[fmt.Sprintf("T%d", n+1)] = lookupVTNominalBurden(u.Type)
 		v[fmt.Sprintf("V%d", n+1)] = ""
-		v[fmt.Sprintf("R%d", n+3)] = ""
+		v[fmt.Sprintf("R%d", n+3)] = lookupGosReestr(u.Type)
 		v[fmt.Sprintf("T%d", n+3)] = u.Verification
-		v[fmt.Sprintf("V%d", n+3)] = ""
+		vtEnd := ""
+		if len(p.SourceCells) > i && len(p.SourceCells[i]) > 28 {
+			vtEnd = p.SourceCells[i][28]
+		}
+		if vtEnd == "" && len(p.SourceCells) > 0 && len(p.SourceCells[0]) > 28 {
+			vtEnd = p.SourceCells[0][28]
+		}
+		vtInterval := calcInterval(u.Verification, vtEnd)
+		if vtInterval == "" && u.Type != "" && u.Type != "-" {
+			vtInterval = "8"
+		}
+		v[fmt.Sprintf("V%d", n+3)] = vtInterval
 	}
 	phases := []string{}
 	for i, t := range p.CT {
@@ -117,11 +318,23 @@ func printValues(p passport.Passport, options passport.Options) map[string]strin
 	}
 	v["M13"] = strings.Join(phases, ", ")
 	v["W14"] = `ООО "Газпром энерго"`
-	v["Z14"] = "Клеммная крышка счётчика"
-	v["AB14"] = `ООО "Газпром энерго"`
+	v["Z14"] = "испытательная коробка"
+	v["AB14"] = `пломба ООО "Газпром энерго"`
+	v["W15"] = `ООО "Газпром энерго"`
+	v["Z15"] = "крышка счетчика"
+	v["AB15"] = `пломба ООО "Газпром энерго"`
+	v["M20"] = "пломба"
+	v["W21"] = "Установлено: измерительный комплекс учета электрической энергии может быть допущен к эксплуатации."
+	v["Q21"] = "Схема соединения измерительных цепей"
+	v["Q22"] = ""
 	v["Z19"] = options.CompilationDate
 	for i, m := range options.Commission {
 		v[fmt.Sprintf("W%d", 27+i)] = m.Signature()
+	}
+	loads := EstimateBurden(p, options)
+	for i := 0; i < 3; i++ {
+		v[fmt.Sprintf("P%d", 29+6*i)] = loads[i]
+		v[fmt.Sprintf("V%d", 5+6*i)] = loads[3+i]
 	}
 	return v
 }
@@ -178,10 +391,15 @@ func BuildWithOptions(template []byte, p passport.Passport, options passport.Opt
 			for ref, value := range printValues(p, options) {
 				values[ref] = value
 			}
+		case "Лист2":
+			w.Parts[s.Part] = burdenSheet(p, options)
+			w.Parts["xl/workbook.xml"] = bytes.ReplaceAll(w.Parts["xl/workbook.xml"], []byte(`name="Лист2"`), []byte(`name="расчёт нагрузки"`))
+			w.Parts["xl/workbook.xml"] = bytes.ReplaceAll(w.Parts["xl/workbook.xml"], []byte("Лист2!"), []byte("'расчёт нагрузки'!"))
+			continue
 		case "исх.данные":
 			w.Parts[s.Part] = dataRE.ReplaceAllLiteral(w.Parts[s.Part], sourceData(p))
 			continue
-		default: // Old database metadata and lookup example data are not sources.
+		default:
 			for ref := range values {
 				values[ref] = ""
 			}
@@ -206,6 +424,9 @@ func BuildWithOptions(template []byte, p passport.Passport, options passport.Opt
 				}
 				return b
 			})
+		}
+		if name == "xl/drawings/drawing1.xml" {
+			data = fixedSchemeAnchors(data)
 		}
 		if strings.HasSuffix(name, ".rels") {
 			data = relationRE.ReplaceAllFunc(data, func(b []byte) []byte {

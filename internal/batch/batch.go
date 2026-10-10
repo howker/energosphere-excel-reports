@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/howker/energosphere-excel-reports/internal/passport"
 	"github.com/howker/energosphere-excel-reports/internal/report"
@@ -33,6 +34,16 @@ func RunWithOptions(ctx context.Context, template []byte, items []passport.Passp
 		r.Errors = append(r.Errors, err.Error())
 		return r
 	}
+	catalogItems := options.BurdenCatalogItems
+	if len(catalogItems) == 0 {
+		catalogItems = items
+	}
+	overrides, err := report.PrepareBurdenCatalog(filepath.Join(dir, report.BurdenCatalogName), catalogItems)
+	if err != nil {
+		r.Errors = append(r.Errors, err.Error())
+		return r
+	}
+	options.BurdenOverrides = overrides
 	for i, p := range items {
 		select {
 		case <-ctx.Done():

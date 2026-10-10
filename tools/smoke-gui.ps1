@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory=$true)][string]$Exe,
     [Parameter(Mandatory=$true)][string]$Source,
     [int]$ExpectedCount = 3,
@@ -79,6 +79,7 @@ try {
         [void][ReportsUI]::SendMessage([ReportsUI]::GetDlgItem($hwnd,112),0xf1,[IntPtr]1,[IntPtr]::Zero)
         [void][ReportsUI]::SendMessage($hwnd,0x111,[IntPtr]112,[IntPtr]::Zero)
         [void][ReportsUI]::SendText([ReportsUI]::GetDlgItem($hwnd,113),0x0c,[IntPtr]::Zero,'08.10.2026')
+        [void][ReportsUI]::SendText([ReportsUI]::GetDlgItem($hwnd,115),0x0c,[IntPtr]::Zero,'10.10.2026')
         [void][ReportsUI]::SendText([ReportsUI]::GetDlgItem($hwnd,114),0x0c,[IntPtr]::Zero,"Инженер АОСС; С.Е. Кудряшов`r`nНачальник; И.И. Иванов")
     }
     [void][ReportsUI]::SendMessage($hwnd,0x111,[IntPtr]109,[IntPtr]::Zero)
@@ -88,6 +89,20 @@ try {
     if (-not $ExportObject -and $files[0].Name -notmatch 'РП-17') {throw 'Wrong selected report'}
     if ($ExportObject -and @($files | Where-Object Name -NotMatch 'Подземное хранилище').Count -ne 0) {throw 'Hidden object exported'}
     if ($CheckBatchOptions -and @($files | Where-Object Name -Match '^ООО ').Count -ne 0) {throw 'Company not omitted'}
+    if ($CheckBatchOptions) {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [IO.Compression.ZipFile]::OpenRead($files[0].FullName)
+        $reader = $null
+        try {
+            $reader = [IO.StreamReader]::new($zip.GetEntry('xl/worksheets/sheet2.xml').Open())
+            [xml]$sheetXml = $reader.ReadToEnd()
+            $dateCell = $sheetXml.SelectSingleNode("//*[local-name()='c' and @r='AC5']//*[local-name()='t']")
+            if ($null -eq $dateCell -or $dateCell.InnerText -ne '10.10.2026') {throw 'VAF verification date not exported from GUI'}
+        } finally {
+            if ($null -ne $reader) {$reader.Dispose()}
+            $zip.Dispose()
+        }
+    }
     [void][ReportsUI]::SendMessage($hwnd,0x10,[IntPtr]::Zero,[IntPtr]::Zero)
     Wait-Condition { $process.HasExited } 'Window did not close'
     Write-Output "PASS native GUI: $ExpectedCount imported, $expectedFiles exported; object=$ExportObject options=$CheckBatchOptions; $dir"

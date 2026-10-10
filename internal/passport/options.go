@@ -12,10 +12,13 @@ type Member struct{ Role, Name string }
 func (m Member) Signature() string { return m.Role + "  ________  " + m.Name }
 
 type Options struct {
-	Prefix          string
-	OmitCompany     bool
-	CompilationDate string
-	Commission      []Member
+	Prefix             string
+	OmitCompany        bool
+	CompilationDate    string
+	VafVerification    string
+	Commission         []Member
+	BurdenOverrides    map[string][6]string
+	BurdenCatalogItems []Passport
 }
 
 // Commission accepts one member per line: role; name. A pasted signature
@@ -42,6 +45,11 @@ func (o Options) Validate() error {
 	if o.CompilationDate != "" {
 		if _, e := time.Parse("02.01.2006", o.CompilationDate); e != nil {
 			return fmt.Errorf("дата составления: введите действительную дату ДД.ММ.ГГГГ")
+		}
+	}
+	if o.VafVerification != "" {
+		if _, e := time.Parse("02.01.2006", o.VafVerification); e != nil {
+			return fmt.Errorf("дата поверки Парма ВАФ-А: введите действительную дату ДД.ММ.ГГГГ")
 		}
 	}
 	for i, m := range o.Commission {

@@ -27,6 +27,7 @@ func main() {
 	prefix := flag.String("prefix", "", "Общий верхний уровень имени")
 	omitCompany := flag.Bool("omit-company", false, "Не включать общество в имя файла")
 	date := flag.String("date", "", "Дата составления ДД.ММ.ГГГГ")
+	vafDate := flag.String("vaf-date", "", "Дата поверки Парма ВАФ-А ДД.ММ.ГГГГ")
 	var members memberFlags
 	flag.Var(&members, "member", "Член комиссии: должность; ФИО (можно повторять)")
 	rows := flag.String("rows", "", "Исходные строки, например 10,16; пусто = все")
@@ -38,7 +39,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	options := passport.Options{Prefix: *prefix, OmitCompany: *omitCompany, CompilationDate: *date, Commission: commission}
+	options := passport.Options{Prefix: *prefix, OmitCompany: *omitCompany, CompilationDate: *date, VafVerification: *vafDate, Commission: commission}
 	if err := options.Validate(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
@@ -65,6 +66,7 @@ func main() {
 		}
 		return
 	}
+	options.BurdenCatalogItems = items
 	if *rows != "" {
 		wanted := map[int]bool{}
 		for _, s := range strings.Split(*rows, ",") {
