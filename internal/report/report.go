@@ -244,7 +244,7 @@ func printValues(p passport.Passport, options passport.Options) map[string]strin
 	section, cell := connectionLabels(p.Connection)
 	v := map[string]string{
 		"A7":  fmt.Sprintf("ПАСПОРТ-ПРОТОКОЛ № %d", number),
-		"B30": section, "F27": cell,
+		"B30": section, "E31": cell,
 		"Q1": "Трансформаторы напряжения:", "Q2": "Место установки:", "R2": ExtractBusSection(p.Connection),
 		"A11": `Инженерно-технического центра ООО «Газпром энерго»`, "A16": p.Object, "A18": p.Connection,
 		"M3": p.Connection, "M4": p.Accounting, "P4": energyType,
@@ -260,7 +260,7 @@ func printValues(p passport.Passport, options passport.Options) map[string]strin
 		"K33": "Фаза B", "M13": "",
 	}
 	// Explicitly clear constants and example observations
-	for _, a := range strings.Fields("B44 Q41 Q43 C30 E31") {
+	for _, a := range strings.Fields("B44 Q41 Q43 C30 F27") {
 		v[a] = ""
 	}
 	v["M15"] = "не проводилось"

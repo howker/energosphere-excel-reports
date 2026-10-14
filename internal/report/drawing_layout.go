@@ -1,8 +1,10 @@
 package report
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
+	"strconv"
 )
 
 var twoCellAnchorRE = regexp.MustCompile(`(?s)<xdr:twoCellAnchor\b[^>]*>.*?</xdr:twoCellAnchor>`)
@@ -15,7 +17,20 @@ func fixedSchemeAnchors(data []byte) []byte {
 	const width, height = 300 * 12700, 345 * 12700
 	return twoCellAnchorRE.ReplaceAllFunc(data, func(anchor []byte) []byte {
 		pic := schemePicRE.Find(anchor)
-		if len(pic) == 0 || !pictureRE.Match(pic) {
+		if len(pic) == 0 {
+			// Сдвиг всей однолинейной схемы на 6 пт освобождает место под E31.
+			// Оба края сдвигаются одинаково, поэтому размер схемы не меняется.
+			if bytes.Contains(anchor, []byte(`name="Группа 106"`)) {
+				offsetRE := regexp.MustCompile(`<xdr:rowOff>([0-9]+)</xdr:rowOff>`)
+				return offsetRE.ReplaceAllFunc(anchor, func(b []byte) []byte {
+					m := offsetRE.FindSubmatch(b)
+					offset, _ := strconv.Atoi(string(m[1]))
+					return []byte(fmt.Sprintf(`<xdr:rowOff>%d</xdr:rowOff>`, offset+6*12700))
+				})
+			}
+			return anchor
+		}
+		if !pictureRE.Match(pic) {
 			return anchor
 		}
 		pic = schemeExtentRE.ReplaceAllLiteral(pic, []byte(fmt.Sprintf(`<a:ext cx="%d" cy="%d"/>`, width, height)))
