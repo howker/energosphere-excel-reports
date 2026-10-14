@@ -2,8 +2,11 @@ package batch
 
 import (
 	"context"
+	"fmt"
 	"github.com/howker/energosphere-excel-reports/internal/passport"
 	"github.com/howker/energosphere-excel-reports/internal/report"
+	"github.com/howker/energosphere-excel-reports/internal/xlsx"
+	"strings"
 	"testing"
 )
 
@@ -29,5 +32,48 @@ func TestErrorDoesNotStopOtherReports(t *testing.T) {
 	r := Run(context.Background(), report.Template, items, t.TempDir(), "", nil)
 	if len(r.Errors) != 1 || len(r.Files) != 1 {
 		t.Fatalf("%+v", r)
+	}
+}
+
+// Проверяется нумерация выбранных паспортов независимо от исходных строк.
+func TestNumberingSelectedReports(t *testing.T) {
+	items := []passport.Passport{{Row: 10, Connection: "СШ1 яч.11"}, {Row: 16, Connection: "СШ2 яч.5"}}
+	result := RunWithOptions(context.Background(), report.Template, items, t.TempDir(), passport.Options{StartNumber: 41}, nil)
+	if len(result.Errors) != 0 || len(result.Files) != 2 {
+		t.Fatalf("%+v", result)
+	}
+	for i, file := range result.Files {
+		book, err := xlsx.Open(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, sheet := range book.Sheets {
+			if sheet.Name == "Лист1" {
+				got, _ := book.Raw(sheet.Cells["A7"])
+				want := fmt.Sprintf("ПАСПОРТ-ПРОТОКОЛ № %d", 41+i)
+				if got != want {
+					t.Fatalf("%q want %q", got, want)
+				}
+			}
+		}
+	}
+}
+func TestFailedExportDoesNotConsumeNumber(t *testing.T) {
+	items := []passport.Passport{{Row: 10, Connection: strings.Repeat("я", 300)}, {Row: 16, Connection: "ok"}}
+	result := RunWithOptions(context.Background(), report.Template, items, t.TempDir(), passport.Options{StartNumber: 75}, nil)
+	if len(result.Errors) != 1 || len(result.Files) != 1 {
+		t.Fatalf("%+v", result)
+	}
+	book, err := xlsx.Open(result.Files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sheet := range book.Sheets {
+		if sheet.Name == "Лист1" {
+			got, _ := book.Raw(sheet.Cells["A7"])
+			if got != "ПАСПОРТ-ПРОТОКОЛ № 75" {
+				t.Fatal(got)
+			}
+		}
 	}
 }

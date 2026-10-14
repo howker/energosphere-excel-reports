@@ -234,7 +234,17 @@ func printValues(p passport.Passport, options passport.Options) map[string]strin
 		syncClocks = "да"
 		tempRegime = "соответствует"
 	}
+	number := options.ProtocolNumber
+	if number == 0 {
+		number = options.StartNumber
+	}
+	if number == 0 {
+		number = 1
+	}
+	section, cell := connectionLabels(p.Connection)
 	v := map[string]string{
+		"A7":  fmt.Sprintf("ПАСПОРТ-ПРОТОКОЛ № %d", number),
+		"B30": section, "F27": cell,
 		"Q1": "Трансформаторы напряжения:", "Q2": "Место установки:", "R2": ExtractBusSection(p.Connection),
 		"A11": `Инженерно-технического центра ООО «Газпром энерго»`, "A16": p.Object, "A18": p.Connection,
 		"M3": p.Connection, "M4": p.Accounting, "P4": energyType,

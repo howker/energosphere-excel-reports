@@ -11,6 +11,20 @@ using System;
 using System.Text;
 using System.Runtime.InteropServices;
 public static class ReportsUI {
+ private delegate bool EnumWindowProc(IntPtr hwnd, IntPtr param);
+ [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowProc callback,IntPtr param);
+ [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd,StringBuilder name,int count);
+ public static IntPtr FindProcessWindow(int processId) {
+  IntPtr result=IntPtr.Zero;
+  EnumWindows(delegate(IntPtr hwnd,IntPtr param) {
+   uint pid;GetWindowThreadProcessId(hwnd,out pid);
+   if(pid==(uint)processId) {var cls=new StringBuilder(64);GetClassName(hwnd,cls,64);if(cls.ToString()=="ESReportsLegacy"){result=hwnd;return false;}}
+   return true;
+  },IntPtr.Zero);
+  return result;
+ }
+
  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string cls,string title);
  [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr hwnd,int id);
  [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr hwnd);
@@ -38,7 +52,7 @@ function Wait-Condition([scriptblock]$Condition,[string]$Message) {
 }
 try {
     $script:hwnd = [IntPtr]::Zero
-    Wait-Condition { $script:hwnd = [ReportsUI]::FindWindow('ESReportsLegacy','Паспорта присоединений — Excel'); $script:hwnd -ne [IntPtr]::Zero } 'Window missing'
+    Wait-Condition { $script:hwnd = [ReportsUI]::FindProcessWindow($process.Id); $script:hwnd -ne [IntPtr]::Zero } 'Window missing'
     $list = [ReportsUI]::GetDlgItem($hwnd,103)
     Wait-Condition { [ReportsUI]::SendMessage($list,0x1004,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -eq $ExpectedCount } 'Wrong import count'
     $combo = [ReportsUI]::GetDlgItem($hwnd,102)
@@ -80,6 +94,7 @@ try {
         [void][ReportsUI]::SendMessage($hwnd,0x111,[IntPtr]112,[IntPtr]::Zero)
         [void][ReportsUI]::SendText([ReportsUI]::GetDlgItem($hwnd,113),0x0c,[IntPtr]::Zero,'08.10.2026')
         [void][ReportsUI]::SendText([ReportsUI]::GetDlgItem($hwnd,115),0x0c,[IntPtr]::Zero,'10.10.2026')
+        [void][ReportsUI]::SendText([ReportsUI]::GetDlgItem($hwnd,116),0x0c,[IntPtr]::Zero,'75')
         [void][ReportsUI]::SendText([ReportsUI]::GetDlgItem($hwnd,114),0x0c,[IntPtr]::Zero,"Инженер АОСС; С.Е. Кудряшов`r`nНачальник; И.И. Иванов")
     }
     [void][ReportsUI]::SendMessage($hwnd,0x111,[IntPtr]109,[IntPtr]::Zero)
@@ -98,6 +113,8 @@ try {
             [xml]$sheetXml = $reader.ReadToEnd()
             $dateCell = $sheetXml.SelectSingleNode("//*[local-name()='c' and @r='AC5']//*[local-name()='t']")
             if ($null -eq $dateCell -or $dateCell.InnerText -ne '10.10.2026') {throw 'VAF verification date not exported from GUI'}
+            $numberCell = $sheetXml.SelectSingleNode("//*[local-name()='c' and @r='A7']//*[local-name()='t']")
+            if ($null -eq $numberCell -or $numberCell.InnerText -ne 'ПАСПОРТ-ПРОТОКОЛ № 75') {throw 'Starting passport number not exported from GUI'}
         } finally {
             if ($null -ne $reader) {$reader.Dispose()}
             $zip.Dispose()

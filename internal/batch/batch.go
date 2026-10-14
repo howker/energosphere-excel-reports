@@ -30,6 +30,14 @@ func RunWithOptions(ctx context.Context, template []byte, items []passport.Passp
 		r.Errors = append(r.Errors, err.Error())
 		return r
 	}
+	start := options.StartNumber
+	if start == 0 {
+		start = 1
+	}
+	if len(items) > 0 && start > int(^uint(0)>>1)-len(items)+1 {
+		r.Errors = append(r.Errors, "начальный номер слишком велик для выбранного количества паспортов")
+		return r
+	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		r.Errors = append(r.Errors, err.Error())
 		return r
@@ -54,6 +62,7 @@ func RunWithOptions(ctx context.Context, template []byte, items []passport.Passp
 		if notify != nil {
 			notify(Progress{Done: i, Total: len(items), Success: len(r.Files), Current: p.Connection})
 		}
+		options.ProtocolNumber = start + len(r.Files)
 		file, err := report.SaveWithOptions(template, p, dir, options)
 		if err != nil {
 			r.Errors = append(r.Errors, fmt.Sprintf("Строка %d, %s: %v", p.Row, p.Connection, err))

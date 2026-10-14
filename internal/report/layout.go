@@ -64,7 +64,7 @@ func closedBorderStyle(old []byte) []byte {
 	return s
 }
 func layout(w *xlsx.Workbook, s *xlsx.Sheet, values map[string]string, options passport.Options) error {
-	refs := strings.Fields("K1 K2 Q1 Q2 R2 M3 M4 P4 M5 P5 M6 P6 M7 P7 M9 P9 M10 P10 M12 P12 M13 P13 M15 P15 A9 A18 K25 K26 Q21 Q22 W5 Y5 AA5 AC5 W6 Y6 AA6 AC6 W11 W14 Z14 AB14 W15 Z15 AB15 W19 Z19 W21")
+	refs := strings.Fields("K1 K2 Q1 Q2 R2 M3 M4 P4 M5 P5 M6 P6 M7 P7 M9 P9 M10 P10 M12 P12 M13 P13 M15 P15 A7 B30 F27 A9 A18 K25 K26 Q21 Q22 W5 Y5 AA5 AC5 W6 Y6 AA6 AC6 W11 W14 Z14 AB14 W15 Z15 AB15 W19 Z19 W21")
 	for i := 0; i < 3; i++ {
 		ct := 28 + 6*i
 		refs = append(refs, fmt.Sprintf("L%d", ct), fmt.Sprintf("N%d", ct), fmt.Sprintf("P%d", ct))
@@ -76,7 +76,7 @@ func layout(w *xlsx.Workbook, s *xlsx.Sheet, values map[string]string, options p
 		refs = append(refs, fmt.Sprintf("R%d", vt+1), fmt.Sprintf("T%d", vt+1), fmt.Sprintf("V%d", vt+1))
 		refs = append(refs, fmt.Sprintf("R%d", vt+3), fmt.Sprintf("T%d", vt+3), fmt.Sprintf("V%d", vt+3))
 	}
-	merges := []string{"K1:P1", "K2:P2", "Q1:V1", "R2:V2", "M3:P3", "K25:P25", "K26:P26", "W19:Y19", "Z19:AD19", "Q21:V21", "W21:AD22"}
+	merges := []string{"A7:J7", "B30:D30", "F27:I27", "K1:P1", "K2:P2", "Q1:V1", "R2:V2", "M3:P3", "K25:P25", "K26:P26", "W19:Y19", "Z19:AD19", "Q21:V21", "W21:AD22"}
 	last := 44
 	for i := range options.Commission {
 		n := 27 + i
@@ -170,12 +170,15 @@ func layout(w *xlsx.Workbook, s *xlsx.Sheet, values map[string]string, options p
 			cellStyles[fmt.Sprintf("W%d", 27+i)] = id
 		}
 	}
-	for _, ref := range []string{"W19", "Z19"} {
+	for _, ref := range []string{"A7", "W19", "Z19"} {
 		id := len(styles)
 		style := wrappingStyle(baseStyles[s.Cells[ref].Style])
 		align := "left"
 		if ref == "W19" {
 			align = "right"
+		}
+		if ref == "A7" {
+			align = "center"
 		}
 		style = alignmentRE.ReplaceAllLiteral(style, []byte(`<alignment horizontal="`+align+`" vertical="center" wrapText="1"/>`))
 		styles = append(styles, style)
@@ -204,7 +207,7 @@ func layout(w *xlsx.Workbook, s *xlsx.Sheet, values map[string]string, options p
 	heights := map[int]float64{
 		1: 24, 2: math.Max(26, lines(values["R2"], 50)*18),
 		3: math.Max(30, lines(values["M3"], 55)*18), 5: math.Max(54, lines(values["M5"], 12)*18),
-		9: 26, 11: 34, 14: 36, 18: math.Max(36, lines(values["A18"], 70)*18), 19: 22,
+		7: 24, 9: 26, 11: 34, 14: 36, 18: math.Max(36, lines(values["A18"], 70)*18), 19: 22,
 		21: 24, 22: 18,
 		25: 24, 26: math.Max(26, lines(values["K26"], 65)*18),
 	}
@@ -278,6 +281,7 @@ func layout(w *xlsx.Workbook, s *xlsx.Sheet, values map[string]string, options p
 	data = mergesRE.ReplaceAllFunc(data, func(b []byte) []byte {
 		inner := mergesRE.FindSubmatch(b)[1]
 		inner = bytes.ReplaceAll(inner, []byte(`<mergeCell ref="Q22:V22"/>`), nil)
+		inner = bytes.ReplaceAll(inner, []byte(`<mergeCell ref="A7:G7"/>`), nil)
 		inner = bytes.ReplaceAll(inner, []byte(`<mergeCell ref="Q41:V42"/>`), nil)
 		count := bytes.Count(inner, []byte("<mergeCell "))
 		for _, r := range merges {
@@ -322,6 +326,12 @@ func layout(w *xlsx.Workbook, s *xlsx.Sheet, values map[string]string, options p
 		`<col min="29" max="29" width="9.6" style="1" customWidth="1"/>` +
 		`<col min="30" max="16384" width="9.14" style="1"/>` +
 		`</cols>`)
+	// Расширяем печатные страницы на 25%, используя свободное место по ширине А4.
+	colsBlock = regexp.MustCompile(`width="([0-9.]+)"`).ReplaceAllFunc(colsBlock, func(b []byte) []byte {
+		m := regexp.MustCompile(`width="([0-9.]+)"`).FindSubmatch(b)
+		value, _ := strconv.ParseFloat(string(m[1]), 64)
+		return []byte(fmt.Sprintf(`width="%.2f"`, value*1.25))
+	})
 	data = regexp.MustCompile(`(?s)<cols\b[^>]*>.*?</cols>`).ReplaceAllLiteral(data, colsBlock)
 
 	data = passportPrintSetup(w, data, last)

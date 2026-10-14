@@ -65,6 +65,40 @@ func passportPrintSetup(w *xlsx.Workbook, data []byte, last int) []byte {
 	}
 	// A4 841.89 пт; поля по 10 мм и запас 12 пт на разные драйверы.
 	scale := int(math.Floor((841.89 - 2*0.39*72 - 12) * 100 / height))
+	// Ограничиваем и ширину каждой страницы, чтобы расширенные столбцы
+	// не создавали дополнительный автоматический разрыв.
+	var widths [30]float64
+	for _, col := range regexp.MustCompile(`<col\b[^>]*/>`).FindAll(data, -1) {
+		attribute := func(name string) string {
+			m := regexp.MustCompile(`\b` + name + `="([^"]+)"`).FindSubmatch(col)
+			if len(m) > 1 {
+				return string(m[1])
+			}
+			return ""
+		}
+		first, _ := strconv.Atoi(attribute("min"))
+		end, _ := strconv.Atoi(attribute("max"))
+		width, _ := strconv.ParseFloat(attribute("width"), 64)
+		if end > 30 {
+			end = 30
+		}
+		for i := first; i <= end && i > 0; i++ {
+			widths[i-1] = math.Floor(width*7+5) * 0.75
+		}
+	}
+	boundaries := []int{0, 10, 16, 22, 30}
+	for page := 0; page < 4; page++ {
+		width := 0.0
+		for _, v := range widths[boundaries[page]:boundaries[page+1]] {
+			width += v
+		}
+		if width > 0 {
+			limit := int(math.Floor((595.28 - 2*0.47*72 - 30) * 100 / width))
+			if scale > limit {
+				scale = limit
+			}
+		}
+	}
 	if scale > 90 {
 		scale = 90
 	}

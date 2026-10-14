@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -159,6 +160,7 @@ const (
 	idDate        = 113
 	idCommission  = 114
 	idVafDate     = 115
+	idStartNumber = 116
 )
 
 type event struct {
@@ -333,6 +335,11 @@ func (a *appState) start() {
 	options.BurdenCatalogItems = a.items
 	options.CompilationDate = strings.TrimSpace(getText(a.controls[idDate]))
 	options.VafVerification = strings.TrimSpace(getText(a.controls[idVafDate]))
+	options.StartNumber, err = strconv.Atoi(strings.TrimSpace(getText(a.controls[idStartNumber])))
+	if err != nil || options.StartNumber < 1 {
+		showError("Начальный номер паспорта: введите положительное целое число.")
+		return
+	}
 	options.Commission, err = passport.ParseCommission(getText(a.controls[idCommission]))
 	if err == nil {
 		err = options.Validate()
@@ -559,7 +566,13 @@ func runGUI(initialSource, initialDir string, initialOptions passport.Options) e
 	}
 	a.control("STATIC", "Дата составления (ДД.ММ.ГГГГ):", 0, 485, 397, 290, 24, 0)
 	a.control("EDIT", initialOptions.CompilationDate, idDate, 790, 391, 236, 28, 0x00810080)
-	a.control("STATIC", "Поверка «Парма ВАФ-А» (ДД.ММ.ГГГГ):", 0, 16, 429, 740, 24, 0)
+	a.control("STATIC", "Поверка «Парма ВАФ-А» (ДД.ММ.ГГГГ):", 0, 450, 429, 330, 24, 0)
+	a.control("STATIC", "Начальный № паспорта:", 0, 16, 429, 230, 24, 0)
+	initialNumber := initialOptions.StartNumber
+	if initialNumber < 1 {
+		initialNumber = 1
+	}
+	a.control("EDIT", strconv.Itoa(initialNumber), idStartNumber, 250, 423, 180, 28, 0x00812080)
 	a.control("EDIT", initialOptions.VafVerification, idVafDate, 790, 423, 236, 28, 0x00810080)
 	a.control("STATIC", "Члены комиссии, по одному в строке: должность; ФИО. Пример: Инженер АОСС; С.Е. Кудряшов", 0, 16, 461, 1010, 24, 0)
 	var initialMembers []string

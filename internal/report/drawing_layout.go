@@ -19,7 +19,7 @@ func fixedSchemeAnchors(data []byte) []byte {
 			return anchor
 		}
 		pic = schemeExtentRE.ReplaceAllLiteral(pic, []byte(fmt.Sprintf(`<a:ext cx="%d" cy="%d"/>`, width, height)))
-		start := `<xdr:oneCellAnchor><xdr:from><xdr:col>17</xdr:col><xdr:colOff>368300</xdr:colOff><xdr:row>21</xdr:row><xdr:rowOff>101600</xdr:rowOff></xdr:from>`
+		start := `<xdr:oneCellAnchor><xdr:from><xdr:col>17</xdr:col><xdr:colOff>942975</xdr:colOff><xdr:row>21</xdr:row><xdr:rowOff>101600</xdr:rowOff></xdr:from>`
 		return []byte(start + fmt.Sprintf(`<xdr:ext cx="%d" cy="%d"/>`, width, height) + string(pic) + `<xdr:clientData/></xdr:oneCellAnchor>`)
 	})
 }

@@ -28,18 +28,23 @@ func main() {
 	omitCompany := flag.Bool("omit-company", false, "Не включать общество в имя файла")
 	date := flag.String("date", "", "Дата составления ДД.ММ.ГГГГ")
 	vafDate := flag.String("vaf-date", "", "Дата поверки Парма ВАФ-А ДД.ММ.ГГГГ")
+	startNumber := flag.Int("start-number", 1, "Начальный номер паспорта-протокола")
 	var members memberFlags
 	flag.Var(&members, "member", "Член комиссии: должность; ФИО (можно повторять)")
 	rows := flag.String("rows", "", "Исходные строки, например 10,16; пусто = все")
 	list := flag.Bool("list", false, "Только список присоединений")
 	gui := flag.Bool("gui", false, "Открыть окно; --source и --out необязательны")
 	flag.Parse()
+	if *startNumber < 1 {
+		fmt.Fprintln(os.Stderr, "начальный номер паспорта должен быть положительным целым числом")
+		os.Exit(2)
+	}
 	commission, err := passport.ParseCommission(strings.Join(members, "\n"))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	options := passport.Options{Prefix: *prefix, OmitCompany: *omitCompany, CompilationDate: *date, VafVerification: *vafDate, Commission: commission}
+	options := passport.Options{StartNumber: *startNumber, Prefix: *prefix, OmitCompany: *omitCompany, CompilationDate: *date, VafVerification: *vafDate, Commission: commission}
 	if err := options.Validate(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
