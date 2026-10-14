@@ -86,7 +86,7 @@ func TestTemplateAndRender(t *testing.T) {
 
 func TestBatchOptionsAndTrueBlankCells(t *testing.T) {
 	p := example()
-	options := passport.Options{OmitCompany: true, CompilationDate: "08.10.2026", VafVerification: "10.10.2026", Commission: []passport.Member{{Role: "Инженер АОСС", Name: "С.Е. Кудряшов"}, {Role: "Начальник", Name: "И.И. Иванов"}}}
+	options := passport.Options{OmitCompany: true, CompilationDate: "08.10.2026", VafType: "Парма ВАФ-А (02)", VafSerial: "000812", VafAccuracy: "0,2", VafVerification: "10.10.2026", Commission: []passport.Member{{Role: "Инженер АОСС", Name: "С.Е. Кудряшов"}, {Role: "Начальник", Name: "И.И. Иванов"}}}
 	b, e := BuildWithOptions(Template, p, options)
 	if e != nil {
 		t.Fatal(e)
@@ -105,6 +105,9 @@ func TestBatchOptionsAndTrueBlankCells(t *testing.T) {
 			"AB14": `пломба ООО "Газпром энерго"`,
 			"Z19":  "08.10.2026",
 			"AC5":  "10.10.2026",
+			"W5":   "Парма ВАФ-А (02)",
+			"Y5":   "000812",
+			"AA5":  "0,2",
 			"W27":  "Инженер АОСС  ________  С.Е. Кудряшов",
 			"W28":  "Начальник  ________  И.И. Иванов",
 			"A11":  `Инженерно-технического центра ООО «Газпром энерго»`,

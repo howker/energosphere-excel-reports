@@ -266,9 +266,9 @@ func printValues(p passport.Passport, options passport.Options) map[string]strin
 	v["M15"] = "не проводилось"
 	v["P15"] = "не проводилось"
 	// Перечень средств измерений (Парма ВАФ-А)
-	v["W5"] = "Парма ВАФ-А"
-	v["Y5"] = "3387"
-	v["AA5"] = "1"
+	v["W5"] = options.VafType
+	v["Y5"] = options.VafSerial
+	v["AA5"] = options.VafAccuracy
 	v["AC5"] = options.VafVerification
 	for _, a := range strings.Fields("W6 Y6 AA6 AC6") {
 		v[a] = ""

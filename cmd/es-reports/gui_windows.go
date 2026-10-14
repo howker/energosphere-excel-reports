@@ -161,6 +161,9 @@ const (
 	idCommission  = 114
 	idVafDate     = 115
 	idStartNumber = 116
+	idVafType     = 117
+	idVafNumber   = 118
+	idVafClass    = 119
 )
 
 type event struct {
@@ -334,6 +337,9 @@ func (a *appState) start() {
 	options := a.filenameOptions()
 	options.BurdenCatalogItems = a.items
 	options.CompilationDate = strings.TrimSpace(getText(a.controls[idDate]))
+	options.VafType = strings.TrimSpace(getText(a.controls[idVafType]))
+	options.VafSerial = strings.TrimSpace(getText(a.controls[idVafNumber]))
+	options.VafAccuracy = strings.TrimSpace(getText(a.controls[idVafClass]))
 	options.VafVerification = strings.TrimSpace(getText(a.controls[idVafDate]))
 	options.StartNumber, err = strconv.Atoi(strings.TrimSpace(getText(a.controls[idStartNumber])))
 	if err != nil || options.StartNumber < 1 {
@@ -510,6 +516,15 @@ func windowProc(hwnd uintptr, m uint32, w uintptr, l unsafe.Pointer) uintptr {
 	return call(user, "DefWindowProcW", hwnd, uintptr(m), w, l)
 }
 func runGUI(initialSource, initialDir string, initialOptions passport.Options) error {
+	if initialOptions.VafType == "" {
+		initialOptions.VafType = "Парма ВАФ-А"
+	}
+	if initialOptions.VafSerial == "" {
+		initialOptions.VafSerial = "3387"
+	}
+	if initialOptions.VafAccuracy == "" {
+		initialOptions.VafAccuracy = "1"
+	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	call(ole, "OleInitialize", 0)
@@ -541,7 +556,7 @@ func runGUI(initialSource, initialDir string, initialOptions passport.Options) e
 	a.control("BUTTON", "Выбрать весь список", idAll, 16, 58, 190, 28, 0)
 	a.control("BUTTON", "Снять выбор в списке", idNone, 218, 58, 190, 28, 0)
 	a.summary = a.control("STATIC", "Откройте исходный файл Excel", 0, 425, 64, 600, 24, 0)
-	h := a.control("SysListView32", "", idList, 16, 100, 1010, 208, 0x00810001)
+	h := a.control("SysListView32", "", idList, 16, 100, 1010, 176, 0x00810001)
 	send(h, 0x1036, 0, 0x10024)
 	for i, c := range []struct {
 		Text  string
@@ -550,30 +565,36 @@ func runGUI(initialSource, initialDir string, initialOptions passport.Options) e
 		column := lvColumn{Mask: 2 | 4, Width: c.Width, Text: u(c.Text)}
 		send(h, 0x1061, uintptr(i), unsafe.Pointer(&column))
 	}
-	a.control("STATIC", "Папка:", 0, 16, 326, 74, 24, 0)
+	a.control("STATIC", "Папка:", 0, 16, 294, 74, 24, 0)
 	exe, _ := os.Executable()
 	dir := filepath.Join(filepath.Dir(exe), "Паспорта")
 	if initialDir != "" {
 		dir = initialDir
 	}
-	a.control("EDIT", dir, idDir, 94, 318, 804, 28, 0x00810080)
-	a.control("BUTTON", "Выбрать…", idBrowse, 912, 318, 114, 28, 0)
-	a.control("STATIC", "Дополнительный префикс имени:", 0, 16, 361, 340, 24, 0)
-	a.control("EDIT", initialOptions.Prefix, idPrefix, 360, 356, 666, 28, 0x00810080)
-	a.control("BUTTON", "Не включать общество в имя файла", idOmitCompany, 16, 393, 450, 24, 3)
+	a.control("EDIT", dir, idDir, 94, 286, 804, 28, 0x00810080)
+	a.control("BUTTON", "Выбрать…", idBrowse, 912, 286, 114, 28, 0)
+	a.control("STATIC", "Дополнительный префикс имени:", 0, 16, 329, 340, 24, 0)
+	a.control("EDIT", initialOptions.Prefix, idPrefix, 360, 324, 666, 28, 0x00810080)
+	a.control("BUTTON", "Не включать общество в имя файла", idOmitCompany, 16, 361, 450, 24, 3)
 	if initialOptions.OmitCompany {
 		send(a.controls[idOmitCompany], 0xf1, 1, 0)
 	}
-	a.control("STATIC", "Дата составления (ДД.ММ.ГГГГ):", 0, 485, 397, 290, 24, 0)
-	a.control("EDIT", initialOptions.CompilationDate, idDate, 790, 391, 236, 28, 0x00810080)
-	a.control("STATIC", "Поверка «Парма ВАФ-А» (ДД.ММ.ГГГГ):", 0, 450, 429, 330, 24, 0)
-	a.control("STATIC", "Начальный № паспорта:", 0, 16, 429, 230, 24, 0)
+	a.control("STATIC", "Дата составления (ДД.ММ.ГГГГ):", 0, 485, 365, 290, 24, 0)
+	a.control("EDIT", initialOptions.CompilationDate, idDate, 790, 359, 236, 28, 0x00810080)
+	a.control("STATIC", "Поверка «Парма ВАФ-А» (ДД.ММ.ГГГГ):", 0, 450, 397, 330, 24, 0)
+	a.control("STATIC", "Начальный № паспорта:", 0, 16, 397, 230, 24, 0)
 	initialNumber := initialOptions.StartNumber
 	if initialNumber < 1 {
 		initialNumber = 1
 	}
-	a.control("EDIT", strconv.Itoa(initialNumber), idStartNumber, 250, 423, 180, 28, 0x00812080)
-	a.control("EDIT", initialOptions.VafVerification, idVafDate, 790, 423, 236, 28, 0x00810080)
+	a.control("EDIT", strconv.Itoa(initialNumber), idStartNumber, 250, 391, 180, 28, 0x00812080)
+	a.control("EDIT", initialOptions.VafVerification, idVafDate, 790, 391, 236, 28, 0x00810080)
+	a.control("STATIC", "Тип «Парма ВАФ-А»:", 0, 16, 429, 175, 24, 0)
+	a.control("EDIT", initialOptions.VafType, idVafType, 195, 423, 250, 28, 0x00810080)
+	a.control("STATIC", "№ прибора:", 0, 460, 429, 95, 24, 0)
+	a.control("EDIT", initialOptions.VafSerial, idVafNumber, 555, 423, 195, 28, 0x00810080)
+	a.control("STATIC", "Класс точности:", 0, 770, 429, 150, 24, 0)
+	a.control("EDIT", initialOptions.VafAccuracy, idVafClass, 925, 423, 101, 28, 0x00810080)
 	a.control("STATIC", "Члены комиссии, по одному в строке: должность; ФИО. Пример: Инженер АОСС; С.Е. Кудряшов", 0, 16, 461, 1010, 24, 0)
 	var initialMembers []string
 	for _, m := range initialOptions.Commission {

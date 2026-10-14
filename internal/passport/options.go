@@ -17,6 +17,9 @@ type Options struct {
 	Prefix             string
 	OmitCompany        bool
 	CompilationDate    string
+	VafType            string
+	VafSerial          string
+	VafAccuracy        string
 	VafVerification    string
 	Commission         []Member
 	BurdenOverrides    map[string][6]string

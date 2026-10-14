@@ -27,6 +27,9 @@ func main() {
 	prefix := flag.String("prefix", "", "Общий верхний уровень имени")
 	omitCompany := flag.Bool("omit-company", false, "Не включать общество в имя файла")
 	date := flag.String("date", "", "Дата составления ДД.ММ.ГГГГ")
+	vafType := flag.String("vaf-type", "Парма ВАФ-А", "Наименование и тип прибора ВАФ")
+	vafNumber := flag.String("vaf-number", "3387", "Номер прибора ВАФ")
+	vafClass := flag.String("vaf-class", "1", "Класс точности прибора ВАФ")
 	vafDate := flag.String("vaf-date", "", "Дата поверки Парма ВАФ-А ДД.ММ.ГГГГ")
 	startNumber := flag.Int("start-number", 1, "Начальный номер паспорта-протокола")
 	var members memberFlags
@@ -44,7 +47,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	options := passport.Options{StartNumber: *startNumber, Prefix: *prefix, OmitCompany: *omitCompany, CompilationDate: *date, VafVerification: *vafDate, Commission: commission}
+	options := passport.Options{StartNumber: *startNumber, Prefix: *prefix, OmitCompany: *omitCompany, CompilationDate: *date, VafType: *vafType, VafSerial: *vafNumber, VafAccuracy: *vafClass, VafVerification: *vafDate, Commission: commission}
 	if err := options.Validate(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)

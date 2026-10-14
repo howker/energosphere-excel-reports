@@ -95,6 +95,9 @@ try {
         [void][ReportsUI]::SendText([ReportsUI]::GetDlgItem($hwnd,113),0x0c,[IntPtr]::Zero,'08.10.2026')
         [void][ReportsUI]::SendText([ReportsUI]::GetDlgItem($hwnd,115),0x0c,[IntPtr]::Zero,'10.10.2026')
         [void][ReportsUI]::SendText([ReportsUI]::GetDlgItem($hwnd,116),0x0c,[IntPtr]::Zero,'75')
+        [void][ReportsUI]::SendText([ReportsUI]::GetDlgItem($hwnd,117),0x0c,[IntPtr]::Zero,'Парма ВАФ-А (02)')
+        [void][ReportsUI]::SendText([ReportsUI]::GetDlgItem($hwnd,118),0x0c,[IntPtr]::Zero,'000812')
+        [void][ReportsUI]::SendText([ReportsUI]::GetDlgItem($hwnd,119),0x0c,[IntPtr]::Zero,'0,2')
         [void][ReportsUI]::SendText([ReportsUI]::GetDlgItem($hwnd,114),0x0c,[IntPtr]::Zero,"Инженер АОСС; С.Е. Кудряшов`r`nНачальник; И.И. Иванов")
     }
     [void][ReportsUI]::SendMessage($hwnd,0x111,[IntPtr]109,[IntPtr]::Zero)
@@ -115,6 +118,10 @@ try {
             if ($null -eq $dateCell -or $dateCell.InnerText -ne '10.10.2026') {throw 'VAF verification date not exported from GUI'}
             $numberCell = $sheetXml.SelectSingleNode("//*[local-name()='c' and @r='A7']//*[local-name()='t']")
             if ($null -eq $numberCell -or $numberCell.InnerText -ne 'ПАСПОРТ-ПРОТОКОЛ № 75') {throw 'Starting passport number not exported from GUI'}
+            foreach ($pair in @(@('W5','Парма ВАФ-А (02)'),@('Y5','000812'),@('AA5','0,2'))) {
+                $field = $sheetXml.SelectSingleNode("//*[local-name()='c' and @r='$($pair[0])']//*[local-name()='t']")
+                if ($null -eq $field -or $field.InnerText -ne $pair[1]) {throw "VAF input not exported: $($pair[0])"}
+            }
         } finally {
             if ($null -ne $reader) {$reader.Dispose()}
             $zip.Dispose()
